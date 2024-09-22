@@ -7,6 +7,7 @@ import numpy as np
 import platform
 
 from pathlib import Path
+import subprocess
 from subprocess import Popen
 
 from phy.utils.tempdir import TemporaryDirectory
@@ -95,16 +96,12 @@ class Recluster(IPlugin):
                 shank = 3
                 mainfetfile = os.path.join(name + '.fet.' + str(shank))
                 write_fet(fet, mainfetfile)
-                if platform.system() == 'Windows':
-                    program = os.path.join(phy_config_dir(),'klustakwik.exe')
-                else:
-                    program = '~/klustakwik/KlustaKwik'
-                cmd = [program, name, str(shank)]
+                
+                cmd = [name, str(shank)]
                 cmd +=["-UseDistributional",'0',"-MaxPossibleClusters",'20',"-MinClusters",'20'] #,"-MinClusters",'2',"-MaxClusters",'12'   ,"-MaxClusters",'12',"-MaxClusters",'12'
 
-                # Run KlustaKwik
-                p = Popen(cmd)
-                p.wait()
+                _run_klustakwik_in_docker(cmd)
+
                 # Read back the clusters
                 spike_clusters = read_clusters(name + '.clu.' + str(shank))
                 controller.supervisor.actions.split(spike_ids, spike_clusters)
@@ -263,3 +260,11 @@ class Recluster(IPlugin):
                 outliers2[outliers] = 2
                 logger.info("Outliers detected: %d.", len(outliers))
                 controller.supervisor.actions.split(s,outliers2)
+
+def _run_klustakwik_in_docker(args):
+    current_dir = os.getcwd()
+    args = f"cd /app/data; /app/KlustaKwik" + args.join(" ")
+    command = f"docker run --rm -v {current_dir}:/app/data valegarman/klustakwik bash -c"
+    result = subprocess.run(command.split(" ") + [args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    logger.warn(result.stdout)
+    logger.warn(result.stderr)
